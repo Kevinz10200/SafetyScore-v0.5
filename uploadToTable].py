@@ -4,8 +4,8 @@ import os
 import json
 import processData
 
-access_key = 'AKIATBN6TMNQHELSPP4N'
-secret_key = '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'
+access_key = ''
+secret_key = ''
 region_name = 'us-west-1'
 
 # Create the DynamoDB client with the provided access keys and region
