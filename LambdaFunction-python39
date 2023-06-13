@@ -1,0 +1,111 @@
+import json
+import boto3
+import time
+
+import json
+import boto3
+import time
+from datetime import datetime
+
+def lambda_handler(event, context):
+    print(event)
+    print(context)
+    
+    # create dynamodb client
+    dynamodb_client = boto3.client('dynamodb', region_name='us-west-1')
+    
+    # Define input table params
+    input_table = 'DrivingData'
+    
+    # do scan on input table
+    response = dynamodb_client.scan(
+        TableName=input_table
+    )
+
+    # Process the response and extract the retrieved items
+    items = response['Items']
+    
+    print(f" ---> RECEIVED {items}")
+    safetyScoreBasic = calculate_safety_score(items)
+    print(f" -----> calculated score={safetyScoreBasic}")
+    
+    # Define output table params
+    output_table = 'SafetyScore'  # output table name
+    
+    for item in items:
+        unix_timestamp = int(item['unix_time_stamp']['N'])  # assuming the unix_time_stamp is a number (N)
+        date_str = datetime.utcfromtimestamp(unix_timestamp).strftime('%Y-%m-%d')
+
+        # insert safetyScoreBasic into output table
+        dynamodb_client.put_item(
+            TableName=output_table,
+            Item={
+                'Date': {'S': date_str},
+                'Person': {'S': 'Cornelia'},  # whomst
+                'Score': {'N': str(safetyScoreBasic)}
+            }
+        )
+
+    print(f" -----> Score successfully inserted into {output_table}")
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps({'Score': safetyScoreBasic})
+    }
+
+
+
+def calculate_safety_score(data):
+    score = 0
+    event_start_time = 0
+    event_highest_gforce = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
+
+    for entry in data:
+        unix_time_stamp = int(entry['unix_time_stamp']['N'])
+        sensor_id = entry['sensorID']['S']
+        x = float(entry['X']['N'])
+        y = float(entry['Y']['N'])
+        z = float(entry['Z']['N'])
+
+        if sensor_id == 'accel':
+            # Check if it's the start of a new event
+            if event_start_time == 0:
+                event_start_time = unix_time_stamp
+
+        elif sensor_id == 'lateral':
+            # Check if it's the end of the current event
+            if event_start_time != 0:
+                event_duration = unix_time_stamp - event_start_time
+
+                # Update score based on event duration
+                if event_duration > 10:  # Example threshold
+                    score -= 10
+                elif event_duration > 5:  # Example threshold
+                    score -= 5
+
+                # Update highest g-force
+                event_highest_gforce['X'] = max(event_highest_gforce['X'], x)
+                event_highest_gforce['Y'] = max(event_highest_gforce['Y'], y)
+                event_highest_gforce['Z'] = max(event_highest_gforce['Z'], z)
+
+                # Reset event variables
+                event_start_time = 0
+                event_highest_gforce = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
+
+        # Update score based on g-forces
+        if x > 1.5:  # Example threshold
+            score -= 10
+        elif x > 1.0:  # Example threshold
+            score -= 5
+
+        if y > 1.5:  # Example threshold
+            score -= 10
+        elif y > 1.0:  # Example threshold
+            score -= 5
+
+        if z > 1.5:  # Example threshold
+            score -= 10
+        elif z > 1.0:  # Example threshold
+            score -= 5
+
+    return score
